@@ -1,0 +1,28 @@
+name: Rust
+
+on:
+  workflow_dispatch:
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+
+    steps:
+    - uses: actions/checkout@v4
+    - name: Build
+      run: cargo build --release --verbose
+    - name: Package
+      run: |
+            strip target/release/lazyssh
+            tar -C target/release \
+              -czf "$GITHUB_WORKSPACE/lazyssh-linux-x86_64.tar.gz" \
+              lazyssh
+
+    - name: Upload binary
+      uses: actions/upload-artifact@v7
+      with:
+            path: lazyssh-linux-x86_64.tar.gz
+            archive: false
