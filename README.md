@@ -53,6 +53,25 @@ Host Tencent ubuntu server
     IdentityFile ~/.ssh/keys/ubuntu
 ```
 
+On Unix systems, if an `IdentityFile` is accessible by the group or other users, `lazyssh` automatically loads it into
+an isolated, temporary `ssh-agent` instead of passing it to `ssh -i`. This avoids creating another copy of the key, and
+the agent exits when the SSH session ends. This behavior requires `ssh-agent` and `ssh-add`. It bypasses OpenSSH's file
+permission check but does not make the original key file secure.
+
+### Using a proxy command
+
+`lazyssh` passes a host's complete `ProxyCommand` to OpenSSH, including `%h` and `%p` tokens:
+
+```
+Host qlwy-db1
+    HostName 192.168.63.45
+    Port 20211
+    User root
+    ProxyCommand ssh -p 6223 -W %h:%p root@101.37.124.230
+```
+
+If `IdentityFile` is omitted, OpenSSH uses its normal default keys and agent identities.
+
 ### Using password(Not recommended)
 
 - Define password with `#: Password`, please make sure that the `sshpass` command is installed.

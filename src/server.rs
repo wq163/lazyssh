@@ -23,8 +23,9 @@ pub struct ServerItem {
     pub ip: String,
     pub username: String,
     pub port: u32,
-    pub private_key: String,
+    pub private_key: Option<String>,
     pub password: Option<String>,
+    pub proxy_command: Option<String>,
 }
 
 #[derive(Default)]
@@ -37,6 +38,7 @@ struct SshConfigParser {
     current_port: u32,
     current_private_key: Option<String>,
     current_password: Option<String>,
+    current_proxy_command: Option<String>,
     items: Vec<ServerItem>,
 }
 
@@ -59,8 +61,9 @@ impl SshConfigParser {
                 ip: String::new(),
                 username: String::new(),
                 port: 0,
-                private_key: String::new(),
+                private_key: None,
                 password: None,
+                proxy_command: None,
             });
             self.current_group = Some(group_name);
             self.current_is_group = Some(true);
@@ -92,6 +95,9 @@ impl SshConfigParser {
             "User" => self.current_user = Some(parts[1].to_string()),
             "Port" => self.current_port = parts[1].parse().unwrap_or(22),
             "IdentityFile" => self.current_private_key = Some(parts[1].to_string()),
+            "ProxyCommand" => {
+                self.current_proxy_command = Some(line[parts[0].len()..].trim().to_string());
+            }
             _ => {}
         }
     }
@@ -105,8 +111,9 @@ impl SshConfigParser {
                 self.current_ip.as_deref().unwrap_or("unknown"),
                 self.current_user.as_deref().unwrap_or("jing"),
                 self.current_port,
-                self.current_private_key.as_deref().unwrap_or("unknown"),
+                self.current_private_key.take(),
                 self.current_password.take(),
+                self.current_proxy_command.take(),
             ));
         }
     }
@@ -117,6 +124,7 @@ impl SshConfigParser {
         self.current_port = 22;
         self.current_private_key = None;
         self.current_password = None;
+        self.current_proxy_command = None;
     }
 }
 
@@ -301,8 +309,9 @@ impl ServerItem {
         ip: &str,
         username: &str,
         port: u32,
-        private_key: &str,
+        private_key: Option<String>,
         password: Option<String>,
+        proxy_command: Option<String>,
     ) -> Self {
         Self {
             group: group.to_string(),
@@ -311,8 +320,9 @@ impl ServerItem {
             ip: ip.to_string(),
             username: username.to_string(),
             port,
-            private_key: private_key.to_string(),
+            private_key,
             password,
+            proxy_command,
         }
     }
 
@@ -336,7 +346,32 @@ impl ServerItem {
 
 #[cfg(test)]
 mod test {
-    use crate::server::ServerList;
+    use crate::server::{ServerList, SshConfigParser};
+
+    #[test]
+    fn parses_proxy_command_without_identity_file() {
+        let config = r#"
+Host qlwy-db1
+    HostName 192.168.63.45
+    Port 20211
+    User root
+    ProxyCommand ssh -p 6223 -W %h:%p root@101.37.124.230
+"#;
+        let mut parser = SshConfigParser::new();
+        config.lines().for_each(|line| parser.parse_line(line));
+        parser.flush_current_host();
+
+        let server = &parser.items[0];
+        assert_eq!(server.host, "qlwy-db1");
+        assert_eq!(server.ip, "192.168.63.45");
+        assert_eq!(server.port, 20211);
+        assert_eq!(server.username, "root");
+        assert_eq!(server.private_key.as_deref(), None);
+        assert_eq!(
+            server.proxy_command.as_deref(),
+            Some("ssh -p 6223 -W %h:%p root@101.37.124.230")
+        );
+    }
 
     #[test]
     fn test() {
