@@ -44,6 +44,20 @@ struct SshConfigParser {
 
 const OTHER_GROUP: &str = "other";
 
+fn trim_matching_quotes(value: &str) -> &str {
+    if value.len() >= 2 {
+        let bytes = value.as_bytes();
+        let has_matching_quotes = matches!(
+            (bytes[0], bytes[bytes.len() - 1]),
+            (b'"', b'"') | (b'\'', b'\'')
+        );
+        if has_matching_quotes {
+            return &value[1..value.len() - 1];
+        }
+    }
+    value
+}
+
 impl SshConfigParser {
     fn new() -> Self {
         Self::default()
@@ -94,7 +108,10 @@ impl SshConfigParser {
             "HostName" => self.current_ip = Some(parts[1].to_string()),
             "User" => self.current_user = Some(parts[1].to_string()),
             "Port" => self.current_port = parts[1].parse().unwrap_or(22),
-            "IdentityFile" => self.current_private_key = Some(parts[1].to_string()),
+            "IdentityFile" => {
+                let value = line[parts[0].len()..].trim();
+                self.current_private_key = Some(trim_matching_quotes(value).to_string());
+            }
             "ProxyCommand" => {
                 self.current_proxy_command = Some(line[parts[0].len()..].trim().to_string());
             }
@@ -347,6 +364,34 @@ impl ServerItem {
 #[cfg(test)]
 mod test {
     use crate::server::{ServerList, SshConfigParser};
+
+    #[test]
+    fn parses_quoted_identity_file_paths() {
+        let config = r#"
+Host double-quoted
+    IdentityFile "/media/wq/d/appdata/nextcloud/备忘存档/有为雷风/雷风社区1.pem"
+Host single-quoted
+    IdentityFile '/tmp/key with spaces.pem'
+Host unquoted
+    IdentityFile ~/.ssh/id_ed25519
+"#;
+        let mut parser = SshConfigParser::new();
+        config.lines().for_each(|line| parser.parse_line(line));
+        parser.flush_current_host();
+
+        assert_eq!(
+            parser.items[0].private_key.as_deref(),
+            Some("/media/wq/d/appdata/nextcloud/备忘存档/有为雷风/雷风社区1.pem")
+        );
+        assert_eq!(
+            parser.items[1].private_key.as_deref(),
+            Some("/tmp/key with spaces.pem")
+        );
+        assert_eq!(
+            parser.items[2].private_key.as_deref(),
+            Some("~/.ssh/id_ed25519")
+        );
+    }
 
     #[test]
     fn parses_proxy_command_without_identity_file() {

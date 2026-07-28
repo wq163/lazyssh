@@ -110,7 +110,43 @@ pub fn ssh_login(server: &ServerItem) {
 mod tests {
     use super::{add_ssh_arguments, expand_private_key_path, private_key_requires_agent};
     use crate::server::ServerItem;
+    use std::path::Path;
     use std::process::Command;
+
+    #[test]
+    fn adds_identity_file_without_shell_quotes() {
+        let identity_file =
+            "/media/wq/d/appdata/nextcloud/备忘存档/有为雷风/雷风社区1.pem";
+        let server = ServerItem::new(
+            "other",
+            false,
+            "server",
+            "114.55.243.216",
+            "root",
+            22,
+            Some(identity_file.to_string()),
+            None,
+            None,
+        );
+        let mut command = Command::new("ssh");
+
+        add_ssh_arguments(&mut command, &server, Some(Path::new(identity_file)));
+
+        let args: Vec<_> = command
+            .get_args()
+            .map(|arg| arg.to_string_lossy().into_owned())
+            .collect();
+        assert_eq!(
+            args,
+            vec![
+                "-p".to_string(),
+                "22".to_string(),
+                "-i".to_string(),
+                identity_file.to_string(),
+                "root@114.55.243.216".to_string(),
+            ]
+        );
+    }
 
     #[test]
     fn adds_proxy_command_without_unknown_identity_file() {
