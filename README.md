@@ -22,6 +22,39 @@ Simply run the `lazyssh` command in the terminal（It is recommended to add a co
 and the TUI program will list all remote servers. You can select a server using your mouse or keyboard, double-click or
 press Enter to log in to the server. All server information comes from the `~/.ssh/config` file.
 
+## Choose an SSH client
+
+By default, `lazyssh` starts the system `ssh` executable. Set `LAZYSSH_SSH` to use another
+OpenSSH-compatible client, such as [trzsz-ssh (`tssh`)](https://github.com/trzsz/trzsz-ssh):
+
+```bash
+export LAZYSSH_SSH=tssh
+lazyssh
+```
+
+You can also set it for a single launch with `LAZYSSH_SSH=tssh lazyssh`, or provide an
+absolute executable path (for example, `LAZYSSH_SSH=/usr/local/bin/tssh`). This variable
+specifies the executable **only**, not additional command-line arguments. Unset it (or
+set it to an empty value) to use `ssh` again. Shell aliases such as `alias ssh='tssh'`
+do not affect `lazyssh` because it starts the executable directly.
+
+The selected SSH client is used for normal logins, `sshpass` password logins, and
+logins using a temporary `ssh-agent`. If you use password authentication, the chosen
+client must support the prompt behavior required by `sshpass`.
+
+For `rz` / `sz` file transfers with `tssh`, install `lrzsz` on the remote server and
+enable ZMODEM in your local `~/.ssh/config`:
+
+```sshconfig
+Host *
+    #!! EnableZmodem yes
+```
+
+The `#!!` prefix lets OpenSSH ignore the `tssh`-specific setting. For more details,
+see [the tssh documentation](https://trzsz.github.io/tssh.html). `ProxyCommand`
+values from `~/.ssh/config` are passed through unchanged; any literal `ssh` inside
+such a command is not rewritten.
+
 ## Shortcut
 
 | Key                | Desc                        |
