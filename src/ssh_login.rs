@@ -4,6 +4,13 @@ use std::os::unix::fs::PermissionsExt;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
+fn resolve_ssh_program(configured: Option<&str>) -> &str {
+    match configured {
+        Some(program) if !program.trim().is_empty() => program,
+        _ => "ssh",
+    }
+}
+
 fn expand_private_key_path(path: &str) -> PathBuf {
     path.strip_prefix("~/")
         .and_then(|relative| dirs::home_dir().map(|home| home.join(relative)))
@@ -39,16 +46,18 @@ fn add_ssh_arguments(command: &mut Command, server: &ServerItem, private_key: Op
 }
 
 pub fn ssh_login(server: &ServerItem) {
+    let configured_ssh = std::env::var("LAZYSSH_SSH").ok();
+    let ssh_program = resolve_ssh_program(configured_ssh.as_deref());
     if let Some(password) = &server.password {
         // Use sshpass for password-based login
         let ssh_cmd = format!(
-            "sshpass -p '{}' ssh {}@{} -p {}",
-            "*".repeat(password.len()), server.username, server.ip, server.port
+            "sshpass -p '{}' {} {}@{} -p {}",
+            "*".repeat(password.len()), ssh_program, server.username, server.ip, server.port
         );
         println!("Executing: {}", ssh_cmd);
 
         let mut command = Command::new("sshpass");
-        command.arg("-p").arg(password).arg("ssh");
+        command.arg("-p").arg(password).arg(ssh_program);
         add_ssh_arguments(&mut command, server, None);
         command
             .spawn()
@@ -61,8 +70,8 @@ pub fn ssh_login(server: &ServerItem) {
         if private_key.as_deref().is_some_and(private_key_requires_agent) {
             let private_key = private_key.as_deref().unwrap();
             let ssh_cmd = format!(
-                "ssh {}@{} -p {} via an ephemeral ssh-agent",
-                server.username, server.ip, server.port
+                "{} {}@{} -p {} via an ephemeral ssh-agent",
+                ssh_program, server.username, server.ip, server.port
             );
             println!("Executing: {}", ssh_cmd);
 
@@ -73,7 +82,7 @@ pub fn ssh_login(server: &ServerItem) {
                 .arg("ssh-add - < \"$1\" && shift && exec \"$@\"")
                 .arg("lazyssh")
                 .arg(private_key)
-                .arg("ssh");
+                .arg(ssh_program);
             add_ssh_arguments(&mut command, server, None);
             command
                 .spawn()
@@ -85,18 +94,22 @@ pub fn ssh_login(server: &ServerItem) {
 
         let ssh_cmd = if let Some(private_key) = &private_key {
             format!(
-                "ssh {}@{} -p {} -i {}",
+                "{} {}@{} -p {} -i {}",
+                ssh_program,
                 server.username,
                 server.ip,
                 server.port,
                 private_key.display()
             )
         } else {
-            format!("ssh {}@{} -p {}", server.username, server.ip, server.port)
+            format!(
+                "{} {}@{} -p {}",
+                ssh_program, server.username, server.ip, server.port
+            )
         };
         println!("Executing: {}", ssh_cmd);
 
-        let mut command = Command::new("ssh");
+        let mut command = Command::new(ssh_program);
         add_ssh_arguments(&mut command, server, private_key.as_deref());
         command
             .spawn()
@@ -108,10 +121,24 @@ pub fn ssh_login(server: &ServerItem) {
 
 #[cfg(test)]
 mod tests {
-    use super::{add_ssh_arguments, expand_private_key_path, private_key_requires_agent};
+    use super::{
+        add_ssh_arguments, expand_private_key_path, private_key_requires_agent, resolve_ssh_program,
+    };
     use crate::server::ServerItem;
     use std::path::Path;
     use std::process::Command;
+
+    #[test]
+    fn defaults_to_ssh_and_accepts_a_custom_ssh_executable() {
+        assert_eq!(resolve_ssh_program(None), "ssh");
+        assert_eq!(resolve_ssh_program(Some("")), "ssh");
+        assert_eq!(resolve_ssh_program(Some("   ")), "ssh");
+        assert_eq!(resolve_ssh_program(Some("tssh")), "tssh");
+        assert_eq!(
+            resolve_ssh_program(Some("/usr/local/bin/tssh")),
+            "/usr/local/bin/tssh"
+        );
+    }
 
     #[test]
     fn adds_identity_file_without_shell_quotes() {
