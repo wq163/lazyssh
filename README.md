@@ -38,9 +38,11 @@ specifies the executable **only**, not additional command-line arguments. Unset 
 set it to an empty value) to use `ssh` again. Shell aliases such as `alias ssh='tssh'`
 do not affect `lazyssh` because it starts the executable directly.
 
-The selected SSH client is used for normal logins, `sshpass` password logins, and
-logins using a temporary `ssh-agent`. If you use password authentication, the chosen
-client must support the prompt behavior required by `sshpass`.
+The selected SSH client is used for normal logins and logins using a temporary
+`ssh-agent`. For a host with `#: Password`, lazyssh passes that password directly to
+`tssh` 0.1.20 or later. Other clients use `sshpass`. The password can be visible in
+the local process arguments when using `tssh`. Keyboard-interactive prompts are
+handled separately by `tssh`.
 
 For `rz` / `sz` file transfers with `tssh`, install `lrzsz` on the remote server and
 enable ZMODEM in your local `~/.ssh/config`:
@@ -96,18 +98,19 @@ permission check but does not make the original key file secure.
 `lazyssh` passes a host's complete `ProxyCommand` to OpenSSH, including `%h` and `%p` tokens:
 
 ```
-Host qlwy-db1
-    HostName 192.168.63.45
-    Port 20211
+Host xxxx
+    HostName 192.168.xx.xx
+    Port 202
     User root
-    ProxyCommand ssh -p 6223 -W %h:%p root@101.37.124.230
+    ProxyCommand ssh -p 622 -W %h:%p root@xx.xx.xx.xx
 ```
 
 If `IdentityFile` is omitted, OpenSSH uses its normal default keys and agent identities.
 
 ### Using password(Not recommended)
 
-- Define password with `#: Password`, please make sure that the `sshpass` command is installed.
+- Define the password with `#: Password`. Install `sshpass` for OpenSSH and other
+  clients that use it.
 
 ```
 Host Media server
