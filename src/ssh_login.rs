@@ -45,20 +45,41 @@ fn add_ssh_arguments(command: &mut Command, server: &ServerItem, private_key: Op
     command.arg(format!("{}@{}", server.username, server.ip));
 }
 
+fn password_login_command(
+    ssh_program: &str,
+    server: &ServerItem,
+    password: &str,
+) -> (Command, String) {
+    let destination = format!("{}@{} -p {}", server.username, server.ip, server.port);
+    let program_name = Path::new(ssh_program)
+        .file_name()
+        .and_then(|name| name.to_str());
+    let (mut command, display) = if matches!(program_name, Some("tssh" | "tssh.exe")) {
+        let mut command = Command::new(ssh_program);
+        if !password.is_empty() {
+            command.arg("-o").arg(format!("Password={password}"));
+        }
+        (command, format!("{ssh_program} {destination}"))
+    } else {
+        let mut command = Command::new("sshpass");
+        command.arg("-p").arg(password).arg(ssh_program);
+        let masked_password = "*".repeat(password.len());
+        (
+            command,
+            format!("sshpass -p '{masked_password}' {ssh_program} {destination}"),
+        )
+    };
+    add_ssh_arguments(&mut command, server, None);
+    (command, display)
+}
+
 pub fn ssh_login(server: &ServerItem) {
     let configured_ssh = std::env::var("LAZYSSH_SSH").ok();
     let ssh_program = resolve_ssh_program(configured_ssh.as_deref());
     if let Some(password) = &server.password {
-        // Use sshpass for password-based login
-        let ssh_cmd = format!(
-            "sshpass -p '{}' {} {}@{} -p {}",
-            "*".repeat(password.len()), ssh_program, server.username, server.ip, server.port
-        );
+        let (mut command, ssh_cmd) = password_login_command(ssh_program, server, password);
         println!("Executing: {}", ssh_cmd);
 
-        let mut command = Command::new("sshpass");
-        command.arg("-p").arg(password).arg(ssh_program);
-        add_ssh_arguments(&mut command, server, None);
         command
             .spawn()
             .expect("Failed to start SSH session with password")
@@ -122,7 +143,8 @@ pub fn ssh_login(server: &ServerItem) {
 #[cfg(test)]
 mod tests {
     use super::{
-        add_ssh_arguments, expand_private_key_path, private_key_requires_agent, resolve_ssh_program,
+        add_ssh_arguments, expand_private_key_path, password_login_command,
+        private_key_requires_agent, resolve_ssh_program,
     };
     use crate::server::ServerItem;
     use std::path::Path;
@@ -138,6 +160,46 @@ mod tests {
             resolve_ssh_program(Some("/usr/local/bin/tssh")),
             "/usr/local/bin/tssh"
         );
+    }
+
+    #[test]
+    fn passes_the_saved_password_to_the_selected_client() {
+        let password = r#"fixture #=' "密码"$"#;
+        let proxy = "ProxyCommand=ssh -W %h:%p jump";
+        let server = ServerItem::new(
+            "other",
+            false,
+            "fixture",
+            "example.org",
+            "user",
+            2222,
+            None,
+            Some(password.to_string()),
+            Some("ssh -W %h:%p jump".to_string()),
+        );
+        let password_option = format!("Password={password}");
+        let common_args = ["-p", "2222", "-o", proxy, "user@example.org"];
+
+        for ssh_program in ["tssh", "/usr/local/bin/tssh", "tssh.exe"] {
+            let (command, display) = password_login_command(ssh_program, &server, password);
+            assert_eq!(command.get_program(), ssh_program);
+            assert!(command
+                .get_args()
+                .eq(["-o", &password_option].into_iter().chain(common_args)));
+            assert!(!display.contains(password));
+        }
+
+        let (command, _) = password_login_command("tssh", &server, "");
+        assert!(command.get_args().eq(common_args));
+
+        for ssh_program in ["ssh", "/usr/local/bin/custom-ssh"] {
+            let (command, display) = password_login_command(ssh_program, &server, password);
+            assert_eq!(command.get_program(), "sshpass");
+            assert!(command
+                .get_args()
+                .eq(["-p", password, ssh_program].into_iter().chain(common_args)));
+            assert!(!display.contains(password));
+        }
     }
 
     #[test]
